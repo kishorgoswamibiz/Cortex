@@ -1,0 +1,34 @@
+# --- Secrets / local config (NEVER commit) ---
+local.properties
+
+# --- Gradle ---
+.gradle/
+gradle-8.4/
+build/
+app/build/
+
+# --- Android / IDE ---
+*.iml
+.idea/
+.externalNativeBuild/
+.cxx/
+
+# --- Local toolchains & large binaries ---
+*.zip
+jdk*/
+jdk-17/
+
+# --- Build outputs ---
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# --- Local Claude settings (machine-specific) ---
+.claude/settings.local.json
+
+# --- Logs / OS cruft ---
+*.log
+.DS_Store
+Thumbs.db
