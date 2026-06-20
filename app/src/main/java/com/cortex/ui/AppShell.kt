@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Menu
@@ -41,6 +42,7 @@ import com.cortex.capture.SpeechManager
 import com.cortex.ui.screens.AskScreen
 import com.cortex.ui.screens.BrowseScreen
 import com.cortex.ui.screens.NodeDetailScreen
+import com.cortex.ui.screens.ReminderCalendarScreen
 import com.cortex.ui.screens.SettingsScreen
 import com.cortex.ui.theme.CanvasBackground
 import com.cortex.ui.theme.InkMist
@@ -51,6 +53,7 @@ object Routes {
     const val ASK_PATTERN = "ask?q={q}"
     const val ASK = "ask"
     const val BROWSE = "browse"
+    const val REMINDERS = "reminders"
     const val NODE = "node/{nodeId}"
     const val SETTINGS = "settings"
     fun node(id: String) = "node/$id"
@@ -64,6 +67,7 @@ private val NAV_TARGETS = listOf(
     NavTarget(Routes.CAPTURE, "Capture", Icons.Outlined.Mic),
     NavTarget(Routes.ASK, "Ask", Icons.Outlined.AutoAwesome),
     NavTarget(Routes.BROWSE, "Browse", Icons.Outlined.AccountTree),
+    NavTarget(Routes.REMINDERS, "Reminders", Icons.Outlined.CalendarMonth),
     NavTarget(Routes.SETTINGS, "Settings", Icons.Outlined.Settings)
 )
 
@@ -160,6 +164,10 @@ fun AppShell(
                 NavHost(
                     navController = navController,
                     startDestination = Routes.CAPTURE,
+                    enterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(280)) },
+                    exitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(220)) },
+                    popEnterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(280)) },
+                    popExitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(220)) },
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)
@@ -199,6 +207,11 @@ fun AppShell(
                             onOpenNode = { id -> navController.navigate(Routes.node(id)) }
                         )
                     }
+                    composable(Routes.REMINDERS) {
+                        ReminderCalendarScreen(
+                            onOpenNode = { id -> navController.navigate(Routes.node(id)) }
+                        )
+                    }
                     composable(Routes.NODE) { entry ->
                         val nodeId = entry.arguments?.getString("nodeId") ?: return@composable
                         NodeDetailScreen(
@@ -221,6 +234,7 @@ private fun titleFor(route: String?): String = when {
     route.startsWith(Routes.CAPTURE) -> ""
     route.startsWith(Routes.ASK) || route.startsWith("ask") -> "Ask"
     route.startsWith(Routes.BROWSE) -> "Browse"
+    route.startsWith(Routes.REMINDERS) -> "Reminders"
     route.startsWith("node") -> ""
     route.startsWith(Routes.SETTINGS) -> "Settings"
     else -> "Cortex"

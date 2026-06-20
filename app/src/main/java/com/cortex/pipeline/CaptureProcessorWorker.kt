@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.cortex.BuildConfig
+import com.cortex.api.CandidateNode
 import com.cortex.api.ChatCompletionRequest
 import com.cortex.api.DeepSeekClient
 import com.cortex.api.ExtractionPrompt
@@ -14,10 +15,21 @@ import com.cortex.api.ResponseFormat
 import com.cortex.data.AppDatabase
 import com.cortex.data.CaptureEntity
 import com.cortex.data.CortexDao
+import com.cortex.reminders.ReminderScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
+/**
+ * Orchestrates the two-stage pipeline for each pending capture:
+ *   Stage A (NormalizeService): clean text + resolve temporal anchors (against the
+ *     capture's own now/zone) + detect reminder intent.
+ *   Stage B: hybrid candidate retrieval -> DeepSeek extraction -> resolve -> write.
+ * Reminders produced by the applier are scheduled as exact alarms.
+ */
 class CaptureProcessorWorker(
     appContext: Context,
     workerParams: WorkerParameters
@@ -38,15 +50,15 @@ class CaptureProcessorWorker(
             return@withContext Result.retry()
         }
         val authHeader = "Bearer ${BuildConfig.DEEPSEEK_API_KEY}"
+        val normalizer = NormalizeService(authHeader)
+        val scheduler = ReminderScheduler(applicationContext)
 
         var anyFailedTransient = false
         for (capture in pending) {
             try {
-                processOne(capture, dao, applier, authHeader)
+                processOne(capture, dao, applier, normalizer, embeddings, scheduler, authHeader)
             } catch (t: Throwable) {
                 Log.e(TAG, "Capture ${capture.id} failed: ${t.message}", t)
-                // Mark failed so we don't loop forever on a single broken capture;
-                // a future "retry failed" UI can re-queue it (FR-7.4).
                 dao.updateCaptureStatus(capture.id, "failed", System.currentTimeMillis())
                 anyFailedTransient = true
             }
@@ -58,15 +70,29 @@ class CaptureProcessorWorker(
         capture: CaptureEntity,
         dao: CortexDao,
         applier: ExtractionApplier,
+        normalizer: NormalizeService,
+        embeddings: EmbeddingService,
+        scheduler: ReminderScheduler,
         authHeader: String
     ) {
-        val candidates = CandidateRetrieval.retrieve(dao, capture.rawText)
+        val now = ZonedDateTime.ofInstant(
+            Instant.ofEpochMilli(capture.createdAt),
+            runCatching { ZoneId.of(capture.zoneId) }.getOrDefault(ZoneId.systemDefault())
+        )
+
+        // Stage A — normalize + resolve temporal anchors.
+        val normalized = normalizer.run(capture.rawText, now)
+        val text = normalized.cleanText
+        val today = now.toLocalDate().toString()
+
+        // Stage B — hybrid retrieval + extraction over the cleaned text.
+        val candidates = CandidateRetrieval.retrieve(dao, embeddings, text)
 
         val req = ChatCompletionRequest(
-            model = "deepseek-chat",
+            model = DeepSeekClient.MODEL,
             messages = listOf(
                 Message("system", ExtractionPrompt.SYSTEM_PROMPT),
-                Message("user", ExtractionPrompt.buildUserMessage(capture.rawText, candidates))
+                Message("user", ExtractionPrompt.buildUserMessage(text, candidates, today))
             ),
             responseFormat = ResponseFormat(type = "json_object")
         )
@@ -76,24 +102,28 @@ class CaptureProcessorWorker(
             ?: throw IllegalStateException("DeepSeek returned no content")
 
         val parsed = parseExtraction(rawJson)
-            ?: parseExtraction(retryWithCorrection(authHeader, capture, candidates, rawJson))
+            ?: parseExtraction(retryWithCorrection(authHeader, text, candidates, today, rawJson))
             ?: throw IllegalStateException("Extraction JSON malformed after retry")
 
-        val outcome = applier.apply(capture.id, parsed, candidates)
-        Log.i(TAG, "Capture ${capture.id} -> items=${outcome.itemsWritten} newNodes=${outcome.nodesCreated} edges=${outcome.edgesCreated} confirm=${outcome.confirmationsNeeded}")
+        val outcome = applier.apply(capture.id, parsed, candidates, normalized, capture.zoneId)
+        outcome.reminders.forEach { scheduler.schedule(it) }
+
+        Log.i(TAG, "Capture ${capture.id} -> items=${outcome.itemsWritten} newNodes=${outcome.nodesCreated} " +
+            "edges=${outcome.edgesCreated} confirm=${outcome.confirmationsNeeded} reminders=${outcome.reminders.size}")
     }
 
     private suspend fun retryWithCorrection(
         authHeader: String,
-        capture: CaptureEntity,
-        candidates: List<com.cortex.api.CandidateNode>,
+        text: String,
+        candidates: List<CandidateNode>,
+        today: String,
         previousReply: String
     ): String {
         val req = ChatCompletionRequest(
-            model = "deepseek-chat",
+            model = DeepSeekClient.MODEL,
             messages = listOf(
                 Message("system", ExtractionPrompt.SYSTEM_PROMPT),
-                Message("user", ExtractionPrompt.buildUserMessage(capture.rawText, candidates)),
+                Message("user", ExtractionPrompt.buildUserMessage(text, candidates, today)),
                 Message("assistant", previousReply),
                 Message("user", "Your previous reply was not valid JSON for the required schema. Reply again with ONLY a valid JSON object matching the schema. No prose.")
             ),

@@ -10,6 +10,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -119,7 +120,30 @@ fun CanvasBackground(content: @Composable () -> Unit) {
  * a "glass" card reads as a *brighter* floating surface, not a darker one,
  * so we paint translucent white over the canvas with a hairline ink border.
  */
-fun Modifier.glassSurface(cornerRadius: Int = 20): Modifier = this
-    .clip(RoundedCornerShape(cornerRadius.dp))
-    .background(InkMist.GlassFill)
-    .border(1.dp, InkMist.HairlineGlass, RoundedCornerShape(cornerRadius.dp))
+fun Modifier.glassSurface(cornerRadius: Int = 20, elevation: Int = 6): Modifier {
+    val shape = RoundedCornerShape(cornerRadius.dp)
+    return this
+        // Soft drop shadow so the card reads as floating above the linen canvas.
+        .shadow(
+            elevation = elevation.dp,
+            shape = shape,
+            clip = false,
+            ambientColor = InkMist.PrimaryText.copy(alpha = 0.40f),
+            spotColor = InkMist.PrimaryText.copy(alpha = 0.40f)
+        )
+        .clip(shape)
+        // Top-lit sheen: brighter at the top edge, settling into the base glass fill.
+        .background(
+            Brush.verticalGradient(
+                colors = listOf(Color.White.copy(alpha = 0.78f), InkMist.GlassFill)
+            )
+        )
+        // Highlight hairline at the top fading to the ink hairline — the "glass edge".
+        .border(
+            width = 1.dp,
+            brush = Brush.verticalGradient(
+                colors = listOf(Color.White.copy(alpha = 0.65f), InkMist.HairlineGlass)
+            ),
+            shape = shape
+        )
+}

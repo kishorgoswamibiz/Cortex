@@ -68,6 +68,11 @@ android {
     }
 }
 
+// Room schema export (exportSchema = true) so v1→v2 migrations stay verifiable.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     // Core Android
     implementation("androidx.core:core-ktx:1.12.0")
@@ -107,4 +112,7 @@ dependencies {
 
     // ONNX Runtime for Embeddings
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.0")
+
+    // Unit tests (TemporalResolver / TemporalReconciler are pure JVM)
+    testImplementation("junit:junit:4.13.2")
 }

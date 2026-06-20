@@ -107,7 +107,7 @@ class QueryService(
             dao.searchNodesScoped(e, c.domain, limitPerTerm).forEach { collected.putIfAbsent(it.id, it) }
         }
         // 2) Salient terms from the whole question
-        for (term in CandidateRetrieval.salientTerms(question, maxTerms = 6)) {
+        for (term in CandidateRetrieval.mentions(question, maxTerms = 6)) {
             if (collected.size >= 8) break
             dao.searchNodesScoped(term, c.domain, limitPerTerm).forEach { collected.putIfAbsent(it.id, it) }
         }
@@ -124,7 +124,7 @@ class QueryService(
         }
         // 4) Items-by-content also surface their parent node
         if (collected.size < 5) {
-            for (term in CandidateRetrieval.salientTerms(question, maxTerms = 6)) {
+            for (term in CandidateRetrieval.mentions(question, maxTerms = 6)) {
                 dao.searchItemsScoped(term, c.domain, 5).forEach { item ->
                     val parent = dao.getNodeById(item.nodeId) ?: return@forEach
                     collected.putIfAbsent(parent.id, parent)

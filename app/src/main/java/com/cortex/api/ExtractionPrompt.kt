@@ -40,14 +40,20 @@ RULES
 - Items are atomic. Do not bundle multiple facts into one content string.
 - Use kind="task" only for actionable to-dos; default status="open".
 - summary for a new node MUST be at most two short lines.
+- CANDIDATES are pre-ranked by a retrieval engine and annotated with match signals (lex=typo similarity, phon=sound-alike, alias=known nickname hit, vec=semantic similarity). If a candidate has high lex/phon/alias/vec, it is almost certainly the SAME entity even if spelled differently (typos, nicknames) — reuse its match_id; do NOT create a `new` node that duplicates it.
+- "aliases" listed under a candidate are known names for it; a mention matching any alias should reuse that candidate.
+- For relation "member_of" and "colleague_on", the item's target_node is the PERSON and the link is the PROJECT.
+- Use the provided TODAY to interpret any relative date wording that remains.
 - If the capture is empty or only filler, return {"items": []}.
 - Output JSON ONLY. No commentary."""
 
-    fun buildUserMessage(captureText: String, candidates: List<CandidateNode>): String {
+    fun buildUserMessage(captureText: String, candidates: List<CandidateNode>, today: String): String {
         val json = Json { encodeDefaults = true }
         val candidatesJson = json.encodeToString(candidates)
         return buildString {
-            appendLine("CANDIDATES (existing nodes that might match — reuse their id via match_id when appropriate):")
+            appendLine("TODAY: $today")
+            appendLine()
+            appendLine("CANDIDATES (existing nodes that might match — reuse their id via match_id when appropriate; ranked best-first with match signals):")
             appendLine(candidatesJson)
             appendLine()
             appendLine("CAPTURE:")

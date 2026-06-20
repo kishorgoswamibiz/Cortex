@@ -147,6 +147,93 @@ interface CortexDao {
     """)
     suspend fun searchItemsScoped(query: String, domain: String?, limit: Int = 30): List<ItemEntity>
 
+    // --- Hybrid retrieval helpers (Phase 3) ---
+
+    /** Lightweight projection of every node for in-Kotlin fuzzy scoring (graph is small). */
+    @Query("SELECT id, name, type, phonetic_key AS phoneticKey FROM nodes LIMIT :cap")
+    suspend fun getNodeNameKeys(cap: Int = 5000): List<NodeNameKey>
+
+    @Query("SELECT * FROM nodes WHERE phonetic_key IN (:keys) LIMIT :limit")
+    suspend fun searchNodesByPhonetic(keys: List<String>, limit: Int = 10): List<NodeEntity>
+
+    @Query("SELECT * FROM embeddings WHERE owner_type = :ownerType AND model_version <> :modelVersion")
+    suspend fun getEmbeddingsByModelVersionNot(ownerType: String, modelVersion: String): List<EmbeddingEntity>
+
+    @Query("SELECT COUNT(*) FROM embeddings WHERE owner_type = 'node' AND model_version <> :modelVersion")
+    suspend fun countNodeEmbeddingsNotVersion(modelVersion: String): Int
+
+    // --- Alias learning (Phase 3) ---
+
+    @Query("""
+        SELECT n.* FROM nodes n
+        JOIN node_aliases a ON a.node_id = n.id
+        WHERE a.alias_norm = :norm
+        ORDER BY a.hit_count DESC
+        LIMIT :limit
+    """)
+    suspend fun searchNodesByAlias(norm: String, limit: Int = 10): List<NodeEntity>
+
+    @Query("SELECT node_id FROM node_aliases WHERE alias_norm = :norm")
+    suspend fun aliasOwners(norm: String): List<String>
+
+    @Query("SELECT alias_surface FROM node_aliases WHERE node_id = :nodeId ORDER BY hit_count DESC LIMIT :limit")
+    suspend fun getAliasSurfaces(nodeId: String, limit: Int = 5): List<String>
+
+    @Query("""
+        INSERT INTO node_aliases(node_id, alias_norm, alias_surface, phonetic_key, hit_count, source, created_at, updated_at)
+        VALUES(:nodeId, :aliasNorm, :aliasSurface, :phoneticKey, 1, :source, :now, :now)
+        ON CONFLICT(node_id, alias_norm) DO UPDATE SET
+            hit_count = hit_count + 1,
+            alias_surface = :aliasSurface,
+            updated_at = :now,
+            source = CASE WHEN :source = 'confirmed' THEN 'confirmed' ELSE node_aliases.source END
+    """)
+    suspend fun upsertAliasBumpCount(
+        nodeId: String,
+        aliasNorm: String,
+        aliasSurface: String,
+        phoneticKey: String?,
+        source: String,
+        now: Long
+    )
+
+    // --- Reminders (Phase 4/5) ---
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReminder(reminder: ReminderEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReminders(reminders: List<ReminderEntity>)
+
+    @Query("SELECT * FROM reminders WHERE id = :id")
+    suspend fun getReminderById(id: String): ReminderEntity?
+
+    @Query("SELECT * FROM reminders WHERE status = 'scheduled' AND trigger_at > :now ORDER BY trigger_at ASC")
+    suspend fun getScheduledFutureReminders(now: Long): List<ReminderEntity>
+
+    @Query("SELECT * FROM reminders WHERE trigger_at >= :start AND trigger_at < :end ORDER BY trigger_at ASC")
+    suspend fun getRemindersBetween(start: Long, end: Long): List<ReminderEntity>
+
+    @Query("SELECT * FROM reminders WHERE status IN ('scheduled','fired') ORDER BY trigger_at ASC")
+    fun getActiveRemindersFlow(): Flow<List<ReminderEntity>>
+
+    @Query("UPDATE reminders SET status = :status, fired_at = :firedAt WHERE id = :id")
+    suspend fun markReminderStatus(id: String, status: String, firedAt: Long?)
+
+    @Query("UPDATE reminders SET trigger_at = :triggerAt, status = 'scheduled' WHERE id = :id")
+    suspend fun updateReminderTrigger(id: String, triggerAt: Long)
+
+    @Query("DELETE FROM reminders WHERE id = :id")
+    suspend fun deleteReminder(id: String)
+
+    // --- Dated items for the calendar (Phase 5) ---
+
+    @Query("SELECT * FROM items WHERE due_at >= :start AND due_at < :end ORDER BY due_at ASC")
+    suspend fun getItemsWithDueBetween(start: Long, end: Long): List<ItemEntity>
+
+    @Query("UPDATE items SET status = :status WHERE id = :id")
+    suspend fun updateItemStatus(id: String, status: String?)
+
     @Transaction
     suspend fun applyExtraction(
         nodes: List<NodeEntity>,

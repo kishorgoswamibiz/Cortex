@@ -56,5 +56,13 @@ data class CandidateNode(
     val name: String,
     val type: String,
     val summary: String,
-    val domain: String? = null
+    val domain: String? = null,
+    // Known surface forms for this node (helps the model reuse it across paraphrases).
+    val aliases: List<String> = emptyList(),
+    // Retrieval signals (why this candidate surfaced) — guide the model to prefer
+    // high-signal matches and avoid creating duplicates. Computed vs the capture.
+    val lex: Float = 0f,        // best lexical (typo-tolerant) similarity 0..1
+    val phon: Boolean = false,  // a phonetic (sound-alike) match
+    val alias: Boolean = false, // matched a learned alias
+    val vec: Float = 0f         // best semantic (embedding) similarity 0..1
 )

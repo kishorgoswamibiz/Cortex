@@ -62,6 +62,14 @@ data class Usage(
 )
 
 object DeepSeekClient {
+    /**
+     * Single source of truth for the model id. Tech Spec §8 wants the explicit
+     * fast "flash" id; we keep the verified-live `deepseek-chat` as the default
+     * and flip this one constant once `deepseek-v4-flash` is confirmed on the
+     * account (an unverified id would 400 every call).
+     */
+    const val MODEL = "deepseek-chat"
+
     val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
